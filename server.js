@@ -28,6 +28,30 @@ app.get('/', (req, res) => {
     res.send('Preparation Genie Backend is Running!');
 });
 
+// DEBUG ROUTE (Temporary)
+app.get('/api/debug-db', async (req, res) => {
+    try {
+        const state = mongoose.connection.readyState;
+        const states = { 0: 'disconnected', 1: 'connected', 2: 'connecting', 3: 'disconnecting' };
+
+        // Try a simple DB operation
+        const userCount = await mongoose.model('User').countDocuments();
+
+        res.json({
+            status: 'ok',
+            dbState: states[state],
+            userCount: userCount,
+            envUri: process.env.MONGODB_URI ? 'Exists (Hidden)' : 'MISSING'
+        });
+    } catch (err) {
+        res.status(500).json({
+            status: 'error',
+            error: err.message,
+            stack: err.stack
+        });
+    }
+});
+
 app.listen(PORT, () => {
     console.log(`🚀 Server running on http://localhost:${PORT}`);
 });
