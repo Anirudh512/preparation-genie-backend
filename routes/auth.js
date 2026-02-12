@@ -23,7 +23,6 @@ router.post('/register', async (req, res) => {
             branch,
             section,
             securityQuestion,
-            securityQuestion,
             securityAnswer: securityAnswer.toLowerCase(),
             // GAMIFICATION: Award "Newbie" immediately
             achievements: ['ach_01']

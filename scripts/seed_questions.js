@@ -1,7 +1,8 @@
 const mongoose = require('mongoose');
 const Test = require('../models/Test');
 
-const MONGODB_URI = 'mongodb://localhost:27017/preparation_genie';
+// Use Cloud URI if provided, else Local
+const MONGODB_URI = process.env.MONGODB_URI || 'mongodb://localhost:27017/preparation_genie';
 
 // Import Data Files
 const year1Sem1Values = require('./data/year1_sem1');

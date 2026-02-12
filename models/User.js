@@ -28,8 +28,7 @@ const UserSchema = new mongoose.Schema({
     }],
 
     // Gamification
-    testsCompleted: { type: Number, default: 0 },
-    achievements: [{ type: String }], // IDs of completed achievements
+    // testsCompleted and achievements are already defined above
     equippedTitle: { type: String, default: "" }, // ID of the equipped title
     unlockedTitles: [{ type: String }], // IDs of unlocked titles
     claimedAchievements: [{ type: String }], // IDs of achievements claimed by user
