@@ -11,8 +11,8 @@ app.use(cors());
 app.use(bodyParser.json());
 
 // MongoDB Connection
-// TODO: Replace with your actual connection string from env
-const MONGODB_URI = 'mongodb://localhost:27017/preparation_genie';
+// MongoDB Connection
+const MONGODB_URI = process.env.MONGODB_URI || 'mongodb://localhost:27017/preparation_genie';
 
 mongoose.connect(MONGODB_URI)
     .then(() => console.log('✅ MongoDB Connected'))
