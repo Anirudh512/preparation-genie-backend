@@ -40,6 +40,36 @@ const year1Tests = [
                 options: ["Concentration", "Temperature", "Pressure", "Volume"],
                 correctAnswer: 0,
                 explanation: "A = εcl, where c is concentration."
+            },
+            {
+                question: "The bond order of O2 molecule is:",
+                options: ["1", "1.5", "2", "2.5"],
+                correctAnswer: 2,
+                explanation: "O2 has 10 bonding and 6 antibonding electrons. BO = (10-6)/2 = 2."
+            },
+            {
+                question: "Which molecule is diamagnetic according to MOT?",
+                options: ["O2", "N2", "B2", "NO"],
+                correctAnswer: 1,
+                explanation: "N2 has all electrons paired."
+            },
+            {
+                question: "The geometry of [Co(NH3)6]3+ is:",
+                options: ["Tetrahedral", "Square Planar", "Octahedral", "Trigonal Bipyramidal"],
+                correctAnswer: 2,
+                explanation: "Coordination number 6 implies octahedral geometry."
+            },
+            {
+                question: "Doping Silicon with Phosphorus results in:",
+                options: ["n-type semiconductor", "p-type semiconductor", "Insulator", "Superconductor"],
+                correctAnswer: 0,
+                explanation: "Phosphorus is pentavalent, adding electrons (n-type)."
+            },
+            {
+                question: "Which transition involves absorption of UV-Vis radiation?",
+                options: ["Vibrational", "Rotational", "Electronic", "Nuclear"],
+                correctAnswer: 2,
+                explanation: "UV-Vis radiation causes electronic transitions."
             }
         ]
     },
@@ -76,6 +106,36 @@ const year1Tests = [
                 options: ["Rate constant", "Cell Potential", "Activation Energy", "Enthalpy"],
                 correctAnswer: 1,
                 explanation: "It relates cell potential to concentration."
+            },
+            {
+                question: "Which of the following causes permanent hardness?",
+                options: ["Mg(HCO3)2", "Ca(HCO3)2", "CaCl2", "Na2CO3"],
+                correctAnswer: 2,
+                explanation: "Chlorides and sulfates of Ca/Mg cause permanent hardness."
+            },
+            {
+                question: "The unit of hardness is:",
+                options: ["mg/L", "ppm", "Degree Clarke", "All of the above"],
+                correctAnswer: 3,
+                explanation: "All are valid units for expressing hardness."
+            },
+            {
+                question: "Break-point chlorination is related to:",
+                options: ["Removal of ammonia", "Killing pathogens", "Residual chlorine", "All of these"],
+                correctAnswer: 3,
+                explanation: "It ensures complete oxidation of ammonia and pathogens."
+            },
+            {
+                question: "The entropy of a perfect crystal at absolute zero is:",
+                options: ["Zero", "Infinite", "Unity", "Undefined"],
+                correctAnswer: 0,
+                explanation: "Third Law of Thermodynamics."
+            },
+            {
+                question: "Corrosion of iron is known as:",
+                options: ["Tarnishing", "Rusting", "Rancidity", "Fading"],
+                correctAnswer: 1,
+                explanation: "Rusting is the specific term for iron corrosion."
             }
         ]
     },

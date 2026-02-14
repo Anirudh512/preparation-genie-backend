@@ -64,13 +64,24 @@ router.post('/users/reset-pin', async (req, res) => {
 });
 
 // 6. GET STUDY CONTENT (For Editing)
+// 6. GET STUDY CONTENT (For Editing)
 router.get('/content/:subject/:unit', async (req, res) => {
     try {
-        const { subject, unit } = req.params;
+        let { subject, unit } = req.params;
+        // Decode URI components to handle spaces and special chars
+        subject = decodeURIComponent(subject);
+        unit = decodeURIComponent(unit);
+
+        console.log(`Fetching Content for Subject: "${subject}", Unit: "${unit}"`);
+
         const content = await StudyContent.findOne({ subject, unit });
-        if (!content) return res.json({ content: "" }); // Return empty string if not found
+        if (!content) {
+            console.log("Content not found.");
+            return res.json({ content: "" }); // Return empty string if not found
+        }
         res.json(content);
     } catch (err) {
+        console.error("Error fetching content:", err);
         res.status(500).send('Server Error');
     }
 });
@@ -133,6 +144,211 @@ router.post('/question', async (req, res) => {
 
     } catch (err) {
         console.error(err);
+        res.status(500).send('Server Error');
+    }
+});
+
+// 9. UPDATE QUESTIONS LIST (Replace all questions for a unit)
+router.post('/questions/update', async (req, res) => {
+    try {
+        const { subject, unit, questions } = req.body; // questions is Array of objects
+
+        if (!subject || !unit || !Array.isArray(questions)) {
+            return res.status(400).json({ msg: 'Invalid data' });
+        }
+
+        let test = await Test.findOne({ subject, unit });
+
+        if (!test) {
+            test = new Test({ subject, unit, questions: [] });
+        }
+
+        test.questions = questions; // Replace entirely
+        await test.save();
+
+        res.json({ msg: 'Questions Updated Successfully', data: test.questions });
+
+    } catch (err) {
+        console.error("Update Questions Error:", err);
+        res.status(500).send('Server Error');
+    }
+});
+
+// 9. SYLLABUS MANAGEMENT
+const Syllabus = require('../models/Syllabus');
+
+// GET Full Syllabus
+router.get('/syllabus', async (req, res) => {
+    try {
+        const syllabus = await Syllabus.find({});
+        res.json(syllabus);
+    } catch (err) {
+        res.status(500).send('Server Error');
+    }
+});
+
+// ADD Subject to Year/Sem
+router.post('/syllabus/subject', async (req, res) => {
+    try {
+        const { yearSem, subject } = req.body;
+        if (!yearSem || !subject) return res.status(400).json({ msg: 'Missing fields' });
+
+        let entry = await Syllabus.findOne({ yearSem });
+        if (!entry) {
+            // Create new Year/Sem entry if not exists
+            entry = new Syllabus({ yearSem, subjects: [] });
+        }
+
+        // Check if subject already exists
+        if (entry.subjects.some(s => s.name === subject)) {
+            return res.status(400).json({ msg: 'Subject already exists' });
+        }
+
+        entry.subjects.push({ name: subject, units: ["1", "2", "3", "4", "5"] }); // Default units
+        await entry.save();
+        res.json({ msg: 'Subject Added', data: entry });
+    } catch (err) {
+        res.status(500).send('Server Error');
+    }
+});
+
+// ADD Unit to Subject
+// ADD Unit to Subject
+router.post('/syllabus/unit', async (req, res) => {
+    try {
+        const { yearSem, subject, unit } = req.body;
+        if (!yearSem || !subject || !unit) return res.status(400).json({ msg: 'Missing fields' });
+
+        const entry = await Syllabus.findOne({ yearSem });
+        if (!entry) return res.status(404).json({ msg: 'Year/Sem not found' });
+
+        const subjectEntry = entry.subjects.find(s => s.name === subject);
+        if (!subjectEntry) return res.status(404).json({ msg: 'Subject not found' });
+
+        if (subjectEntry.units.includes(unit)) {
+            return res.status(400).json({ msg: 'Unit already exists' });
+        }
+
+        subjectEntry.units.push(unit);
+        await entry.save();
+        res.json({ msg: 'Unit Added', data: entry });
+    } catch (err) {
+        console.error(err);
+        res.status(500).send('Server Error');
+    }
+});
+
+// SEED Syllabus (One-time use)
+router.post('/syllabus/seed', async (req, res) => {
+    try {
+        const { data } = req.body; // Expects array of { yearSem, subjects: [...] }
+        if (!data) return res.status(400).json({ msg: 'No data provided' });
+
+        await Syllabus.deleteMany({}); // Clear existing
+        // Transform data map to array
+        // Expected structure from frontend: { "Year-Sem": ["Sub1", "Sub2"] }
+
+        for (const [key, value] of Object.entries(data)) {
+            const subjectsObj = value.map(subName => ({
+                name: subName,
+                units: ["1", "2", "3", "4", "5"]
+            }));
+
+            await new Syllabus({
+                yearSem: key,
+                subjects: subjectsObj
+            }).save();
+        }
+
+        res.json({ msg: 'Syllabus Seeded Successfully' });
+    } catch (err) {
+        console.error(err);
+        res.status(500).send('Server Error');
+    }
+});
+
+// SEED Study Content (One-time use)
+router.post('/content/seed', async (req, res) => {
+    try {
+        const { data } = req.body; // Expects array of { subject, unit, content }
+        if (!data) return res.status(400).json({ msg: 'No data provided' });
+
+        await StudyContent.deleteMany({}); // Clear existing
+
+        // Insert all
+        await StudyContent.insertMany(data);
+
+        res.json({ msg: 'Content Seeded Successfully' });
+    } catch (err) {
+        console.error("Content Seed Error:", err);
+        res.status(500).send('Server Error: ' + err.message);
+    }
+});
+
+// SEED Questions (One-time use)
+router.post('/question/seed', async (req, res) => {
+    try {
+        const { data } = req.body; // Expects array of { subject, unit (number), questions }
+        if (!data) return res.status(400).json({ msg: 'No data provided' });
+
+        await Test.deleteMany({}); // Clear existing
+
+        // Insert all
+        await Test.insertMany(data);
+
+        res.json({ msg: 'Questions Seeded Successfully' });
+    } catch (err) {
+        console.error("Question Seed Error:", err);
+        res.status(500).send('Server Error: ' + err.message);
+    }
+});
+
+// 12. PREVIOUS YEAR QUESTIONS (PYQs) - Dynamic Management
+const PreviousYearQuestion = require('../models/PreviousYearQuestion');
+
+// GET PYQs for Subject/Unit
+router.get('/pyq/:subject/:unit', async (req, res) => {
+    try {
+        let { subject, unit } = req.params;
+        subject = decodeURIComponent(subject);
+        unit = decodeURIComponent(unit);
+
+        const questions = await PreviousYearQuestion.find({ subject, unit }).sort({ priority: 1, year: -1 });
+        res.json(questions);
+    } catch (err) {
+        console.error("Fetch PYQ Error:", err);
+        res.status(500).send('Server Error');
+    }
+});
+
+// ADD PYQ
+router.post('/pyq', async (req, res) => {
+    try {
+        const { subject, unit, question, year, priority } = req.body;
+        if (!subject || !unit || !question || !year) return res.status(400).json({ msg: 'Missing fields' });
+
+        const newQ = new PreviousYearQuestion({
+            subject,
+            unit,
+            question,
+            year,
+            priority: priority || 'normal'
+        });
+        await newQ.save();
+        res.json({ msg: 'PYQ Added', data: newQ });
+    } catch (err) {
+        console.error("Add PYQ Error:", err);
+        res.status(500).send('Server Error');
+    }
+});
+
+// DELETE PYQ
+router.delete('/pyq/:id', async (req, res) => {
+    try {
+        await PreviousYearQuestion.findByIdAndDelete(req.params.id);
+        res.json({ msg: 'PYQ Deleted' });
+    } catch (err) {
+        console.error("Delete PYQ Error:", err);
         res.status(500).send('Server Error');
     }
 });
