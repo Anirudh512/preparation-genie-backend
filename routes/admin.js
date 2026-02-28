@@ -353,4 +353,196 @@ router.delete('/pyq/:id', async (req, res) => {
     }
 });
 
+// --- ANALYTICS DASHBOARD ---
+router.get('/analytics', async (req, res) => {
+    try {
+        const userCount = await User.countDocuments();
+
+        // Sum total tests taken by all users
+        const users = await User.find({}, 'testsCompleted');
+        const totalTestsTaken = users.reduce((sum, u) => sum + (u.testsCompleted || 0), 0);
+
+        const contentCount = await StudyContent.countDocuments();
+
+        // Count total questions across all units
+        const tests = await Test.find({}, 'questions');
+        const totalQuestions = tests.reduce((sum, t) => sum + t.questions.length, 0);
+
+        const pyqCount = await PreviousYearQuestion.countDocuments();
+
+        res.json({
+            userCount,
+            totalTestsTaken,
+            contentCount,
+            totalQuestions,
+            pyqCount
+        });
+    } catch (err) {
+        console.error("Analytics Error:", err);
+        res.status(500).send('Server Error');
+    }
+});
+// --- TITLES STORE MANAGEMENT ---
+const TitleItem = require('../models/TitleItem');
+
+router.get('/titles', async (req, res) => {
+    try {
+        const titles = await TitleItem.find({});
+        res.json(titles);
+    } catch (err) {
+        console.error("Fetch Titles Error:", err);
+        res.status(500).send('Server Error');
+    }
+});
+
+router.post('/titles', async (req, res) => {
+    try {
+        const { name, price, colorType } = req.body;
+        if (!name || isNaN(price)) return res.status(400).json({ msg: 'Missing or Invalid fields' });
+
+        const newTitle = new TitleItem({ name, price, colorType: colorType || 'blue' });
+        await newTitle.save();
+        res.json({ msg: 'Title Added', data: newTitle });
+    } catch (err) {
+        console.error("Add Title Error:", err);
+        res.status(500).send('Server Error');
+    }
+});
+
+router.delete('/titles/:id', async (req, res) => {
+    try {
+        await TitleItem.findByIdAndDelete(req.params.id);
+        res.json({ msg: 'Title Deleted' });
+    } catch (err) {
+        console.error("Delete Title Error:", err);
+        res.status(500).send('Server Error');
+    }
+});
+
+// --- QUESTS MANAGEMENT ---
+const QuestItem = require('../models/QuestItem');
+
+router.get('/quests', async (req, res) => {
+    try {
+        const quests = await QuestItem.find({});
+        res.json(quests);
+    } catch (err) {
+        console.error("Fetch Quests Error:", err);
+        res.status(500).send('Server Error');
+    }
+});
+
+router.post('/quests', async (req, res) => {
+    try {
+        const { setId, title, target, reward, questType } = req.body;
+        if (!setId || !title || !target || !reward || !questType) return res.status(400).json({ msg: 'Missing fields' });
+
+        const newQuest = new QuestItem({ setId, title, target, reward, questType });
+        await newQuest.save();
+        res.json({ msg: 'Quest Added', data: newQuest });
+    } catch (err) {
+        console.error("Add Quest Error:", err);
+        res.status(500).send('Server Error');
+    }
+});
+
+router.delete('/quests/:id', async (req, res) => {
+    try {
+        await QuestItem.findByIdAndDelete(req.params.id);
+        res.json({ msg: 'Quest Deleted' });
+    } catch (err) {
+        console.error("Delete Quest Error:", err);
+        res.status(500).send('Server Error');
+    }
+});
+
+// --- ACHIEVEMENTS MANAGEMENT ---
+const AchievementItem = require('../models/AchievementItem');
+
+router.get('/achievements', async (req, res) => {
+    try {
+        const achs = await AchievementItem.find({});
+        res.json(achs);
+    } catch (err) {
+        console.error("Fetch Achievements Error:", err);
+        res.status(500).send('Server Error');
+    }
+});
+
+router.post('/achievements', async (req, res) => {
+    try {
+        const { title, hint, req: requirement } = req.body;
+        if (!title || !hint || requirement === undefined) return res.status(400).json({ msg: 'Missing fields' });
+
+        const newAch = new AchievementItem({ title, hint, req: requirement });
+        await newAch.save();
+        res.json({ msg: 'Achievement Added', data: newAch });
+    } catch (err) {
+        console.error("Add Achievement Error:", err);
+        res.status(500).send('Server Error');
+    }
+});
+
+router.delete('/achievements/:id', async (req, res) => {
+    try {
+        await AchievementItem.findByIdAndDelete(req.params.id);
+        res.json({ msg: 'Achievement Deleted' });
+    } catch (err) {
+        console.error("Delete Achievement Error:", err);
+        res.status(500).send('Server Error');
+    }
+});
+
+// --- REQUESTS MANAGEMENT (Feedback & Deletions) ---
+const RequestModel = require('../models/Request');
+
+router.get('/requests', async (req, res) => {
+    try {
+        const requests = await RequestModel.find({}).sort({ createdAt: -1 });
+        res.json(requests);
+    } catch (err) {
+        console.error("Fetch Requests Error:", err);
+        res.status(500).send('Server Error');
+    }
+});
+
+router.post('/requests', async (req, res) => {
+    try {
+        const { type, username, message } = req.body;
+        if (!type || !username || !message) return res.status(400).json({ msg: 'Missing fields' });
+
+        const newReq = new RequestModel({ type, username, message });
+        await newReq.save();
+        res.json({ msg: 'Request Submitted', data: newReq });
+    } catch (err) {
+        console.error("Submit Request Error:", err);
+        res.status(500).send('Server Error');
+    }
+});
+
+// Approve/Resolve a Request
+router.put('/requests/:id/resolve', async (req, res) => {
+    try {
+        const { action } = req.body; // 'approve' or 'reject'
+        const requestId = req.params.id;
+
+        const reqDoc = await RequestModel.findById(requestId);
+        if (!reqDoc) return res.status(404).json({ msg: 'Request not found' });
+
+        reqDoc.status = action === 'approve' ? 'approved' : 'rejected';
+
+        // If it's a deletion approval, actually delete the user and their related data
+        if (reqDoc.type === 'deletion' && action === 'approve') {
+            await User.findOneAndDelete({ username: reqDoc.username });
+            // Optionally delete their history/content, or leave them orphaned
+        }
+
+        await reqDoc.save();
+        res.json({ msg: `Request ${action}d successfully.`, data: reqDoc });
+    } catch (err) {
+        console.error("Resolve Request Error:", err);
+        res.status(500).send('Server Error');
+    }
+});
+
 module.exports = router;

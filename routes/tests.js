@@ -179,8 +179,14 @@ router.post('/submit', async (req, res) => {
         if (user.achievements.length >= 45) addToAch('ach_45'); // Completionist
         if (user.achievements.length >= 49) addToAch('ach_49'); // GOAT (All others)
 
+        // --- ECONOMY LOGIC (Coins) ---
+        // Earn base coins for finishing: 10 coins
+        // Earn bonus coins based on score: 2 coins per correct answer
+        const coinsEarned = 10 + (score * 2);
+        user.coins = (user.coins || 0) + coinsEarned;
+
         await user.save();
-        res.json({ msg: 'Test submitted successfully', user, newAchievements });
+        res.json({ msg: 'Test submitted successfully', user, newAchievements, coinsEarned });
     } catch (err) {
         console.error(err.message);
         res.status(500).send('Server Error');

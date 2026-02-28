@@ -14,6 +14,43 @@ const UserSchema = new mongoose.Schema({
     // Profile Stats
     achievements: [{ type: String }],
     progress: { type: Number, default: 0 },
+    coins: {
+        type: Number,
+        default: 0
+    },
+    ownedTitles: [{
+        type: String
+    }],
+    activeTitle: {
+        type: String,
+        default: 'Novice'
+    },
+    streak: {
+        type: Number,
+        default: 0
+    },
+    maxStreak: {
+        type: Number,
+        default: 0
+    },
+    streakFreezes: {
+        type: Number,
+        default: 0
+    },
+    lastActiveDate: {
+        type: Date
+    },
+    // Daily Quests Tracker (Reset daily)
+    activeQuests: [{
+        id: String,
+        title: String,
+        target: Number,
+        progress: { type: Number, default: 0 },
+        reward: Number,
+        questType: String,
+        claimed: { type: Boolean, default: false }
+    }],
+    lastQuestResetDate: { type: Date },
     testsCompleted: { type: Number, default: 0 },
     readUnits: [{ type: String }], // Track unique unit IDs read
 
@@ -32,6 +69,7 @@ const UserSchema = new mongoose.Schema({
     equippedTitle: { type: String, default: "" }, // ID of the equipped title
     unlockedTitles: [{ type: String }], // IDs of unlocked titles
     claimedAchievements: [{ type: String }], // IDs of achievements claimed by user
+    coins: { type: Number, default: 0 }, // ** NEW VIRTUAL ECONOMY FIELD **
 
     // Login Streak
     lastLoginDate: { type: Date, default: null },
