@@ -145,13 +145,18 @@ io.on('connection', (socket) => {
         // data: { roomId, username }
         socket.join(data.roomId);
         if (!activeChatRooms[data.roomId]) {
-            activeChatRooms[data.roomId] = { users: new Set(), maxEver: 0 };
+            activeChatRooms[data.roomId] = { users: new Set(), maxEver: 0, history: [] };
         }
         activeChatRooms[data.roomId].users.add(socket.id);
 
         if (activeChatRooms[data.roomId].users.size > activeChatRooms[data.roomId].maxEver) {
             activeChatRooms[data.roomId].maxEver = activeChatRooms[data.roomId].users.size;
         }
+
+        // Emit existing chat history to the newly joined user
+        socket.emit('receive_chat_history', {
+            history: activeChatRooms[data.roomId].history
+        });
 
         socket.to(data.roomId).emit('user_joined_room', {
             username: data.username,
@@ -185,12 +190,22 @@ io.on('connection', (socket) => {
     socket.on('direct_message', (data) => {
         // data: { roomId, senderUsername, text }
         const cleanedText = filterMessage(data.text);
-        socket.to(data.roomId).emit('receive_direct_message', { // emit to everyone else in room
+
+        const messageObject = {
             senderSocketId: socket.id,
             senderUsername: data.senderUsername,
             text: cleanedText,
             timestamp: new Date().toISOString()
-        });
+        };
+
+        if (activeChatRooms[data.roomId]) {
+            activeChatRooms[data.roomId].history.push(messageObject);
+            if (activeChatRooms[data.roomId].history.length > 50) {
+                activeChatRooms[data.roomId].history.shift(); // Keep last 50 messages
+            }
+        }
+
+        socket.to(data.roomId).emit('receive_direct_message', messageObject);
     });
 
     socket.on('typing', (data) => {
