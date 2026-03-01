@@ -46,13 +46,14 @@ router.get('/profile/:username', async (req, res) => {
 router.get('/leaderboard', async (req, res) => {
     try {
         const users = await User.find({})
-            .select('name username testsCompleted loginStreak coins progress equippedTitle')
+            .select('name username testsCompleted loginStreak coins progress equippedTitle xp')
             .lean();
 
         const rankedUsers = users.map(u => {
             const score =
                 (u.testsCompleted || 0) * 100 +
                 (u.loginStreak || 0) * 50 +
+                (u.xp || 0) * 20 +
                 (u.coins || 0) * 5 +
                 (u.progress || 0) * 10;
             return { ...u, score: Math.round(score) };
@@ -113,13 +114,15 @@ router.post('/read-unit', async (req, res) => {
 // UPDATE PROGRESS / ACHIEVEMENTS
 router.post('/update-progress', async (req, res) => {
     try {
-        const { username, progress, testsCompleted, achievements } = req.body;
+        const { username, progress, testsCompleted, achievements, xp } = req.body;
 
         const user = await User.findOne({ username });
         if (!user) return res.status(404).json({ msg: 'User not found' });
 
         if (progress !== undefined) user.progress = progress;
         if (testsCompleted !== undefined) user.testsCompleted = testsCompleted;
+        if (xp !== undefined) user.xp = (user.xp || 0) + xp; // Add newly earned XP
+
         if (achievements) {
             // Add new achievements, avoid duplicates
             achievements.forEach(ach => {
@@ -471,6 +474,39 @@ router.get('/achievements', async (req, res) => {
         res.json(achs);
     } catch (err) {
         console.error("Fetch Achievements Error:", err);
+        res.status(500).send('Server Error');
+    }
+});
+// DAILY SPIN WHEEL
+router.post('/spin-wheel', async (req, res) => {
+    try {
+        const { username, rewardType, amount } = req.body;
+        const user = await User.findOne({ username });
+        if (!user) return res.status(404).json({ msg: 'User not found' });
+
+        const now = new Date();
+        // Check if user has spun in the last 24 hours
+        if (user.lastSpinDate) {
+            const diffHours = Math.abs(now - new Date(user.lastSpinDate)) / 36e5;
+            if (diffHours < 24) {
+                return res.status(400).json({ success: false, msg: 'Spin Wheel is on cooldown.' });
+            }
+        }
+
+        // Apply reward
+        if (rewardType === 'coins') {
+            user.coins += amount;
+        } else if (rewardType === 'xp') {
+            user.xp += amount;
+        } else if (rewardType === 'freeze') {
+            if (user.streakFreezes < 3) user.streakFreezes += amount;
+        }
+
+        user.lastSpinDate = now;
+        await user.save();
+        res.json({ success: true, rewardType, amount, user });
+    } catch (err) {
+        console.error("Spin Wheel Error:", err.message);
         res.status(500).send('Server Error');
     }
 });

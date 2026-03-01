@@ -22,6 +22,10 @@ const activeStudyRooms = {}; // { subjectName: { socketId: { username, joinedAt 
 const globalOnlineUsers = {}; // { socketId: username }
 const usernameToSocket = {}; // { username: socketId }
 
+// Quiz Clash PVP
+let quizQueue = null; // Deprecated, but leaving declaration to avoid crashes if referenced
+const activeQuizzes = {}; // Maps matchId -> { player1, player2, questions, p1Score, p2Score }
+
 // Simple profanity filter
 const abusiveWords = ['fuck', 'shit', 'bitch', 'asshole', 'cunt', 'dick', 'pussy', 'whore', 'slut', 'idiot', 'stupid', 'bastard'];
 const filterMessage = (text) => {
@@ -226,6 +230,130 @@ io.on('connection', (socket) => {
     // Also export global online check
     socket.on('get_online_users', () => {
         socket.emit('online_users_list', Object.values(globalOnlineUsers));
+    });
+
+    // =============================
+    // 1v1 QUIZ CLASH MATCHMAKING
+    // =============================
+
+    const quizBank = [
+        { q: "What is the time complexity of binary search?", options: ["O(n)", "O(log n)", "O(n^2)", "O(1)"], answer: "O(log n)" },
+        { q: "Which data structure uses LIFO?", options: ["Queue", "Tree", "Stack", "Graph"], answer: "Stack" },
+        { q: "What does HTML stand for?", options: ["Hyper Text Markup Language", "Home Tool Markup Language", "Hyperlinks and Text Markup Language", "Hyper Tool Markup Language"], answer: "Hyper Text Markup Language" },
+        { q: "Which protocol is used for secure communication?", options: ["HTTP", "FTP", "HTTPS", "SMTP"], answer: "HTTPS" },
+        { q: "Who is known as the father of computers?", options: ["Alan Turing", "Charles Babbage", "Bill Gates", "Steve Jobs"], answer: "Charles Babbage" },
+        { q: "What is the main function of an operating system?", options: ["Word processing", "Manage hardware and software resources", "Web browsing", "Virus protection"], answer: "Manage hardware and software resources" },
+        { q: "Which symbol is used for comments in Python?", options: ["//", "/*", "#", "--"], answer: "#" },
+        { q: "What does SQL stand for?", options: ["Structured Query Language", "Strong Question Language", "Structured Question Language", "System Query Language"], answer: "Structured Query Language" },
+        { q: "Which IP address is loopback?", options: ["192.168.1.1", "10.0.0.1", "127.0.0.1", "172.16.0.1"], answer: "127.0.0.1" },
+        { q: "What is a 'bug' in software?", options: ["A virus", "An error or flaw", "A feature", "A network tool"], answer: "An error or flaw" },
+        { q: "What does CPU stand for?", options: ["Central Process Unit", "Computer Personal Unit", "Central Processing Unit", "Central Processor Unit"], answer: "Central Processing Unit" },
+        { q: "Which language is used for styling web pages?", options: ["HTML", "JQuery", "CSS", "XML"], answer: "CSS" },
+        { q: "What is Git?", options: ["A programming language", "A version control system", "An operating system", "A web browser"], answer: "A version control system" },
+        { q: "What does 'HTTP' stand for?", options: ["Hypertext Transfer Protocol", "Hyper Transfer Text Protocol", "Hyperlink Transfer Technology", "Hypertext Technology Protocol"], answer: "Hypertext Transfer Protocol" },
+        { q: "What is the standard port for HTTPS?", options: ["80", "443", "21", "22"], answer: "443" }
+    ];
+
+    socket.on('send_quiz_invite', (data) => {
+        // data: { targetSocketId, senderUsername, senderName, config: { year, sem, subject } }
+        io.to(data.targetSocketId).emit('quiz_invite_received', {
+            challengerSocketId: socket.id,
+            challengerUsername: data.senderUsername,
+            challengerName: data.senderName,
+            config: data.config
+        });
+    });
+
+    socket.on('reject_quiz_invite', (data) => {
+        // data: { challengerSocketId, accepterUsername }
+        io.to(data.challengerSocketId).emit('quiz_invite_rejected', {
+            username: data.accepterUsername
+        });
+    });
+
+    socket.on('accept_quiz_invite', (data) => {
+        // data: { challengerSocketId, challengerUsername, challengerName, accepterUsername, accepterName, config: { subject } }
+        const matchId = `match_${Date.now()}`;
+
+        // Mock AI Generation: If subject matches bank, use them, otherwise generate dynamic mock questions
+        const subject = data.config.subject;
+        let sessionQuestions = [];
+        const subjectQ = quizBank.filter(q => q.q.toLowerCase().includes(subject.toLowerCase()));
+
+        if (subjectQ.length >= 5) {
+            sessionQuestions = subjectQ.sort(() => 0.5 - Math.random()).slice(0, 5);
+        } else {
+            // "AI Generated" Mock Fallback
+            sessionQuestions = [
+                { q: `What is a fundamental principle of ${subject}?`, options: ["Abstractions", "Syntax", "Loops", "Variables"], answer: "Abstractions" },
+                { q: `Which of these is commonly used in ${subject} projects?`, options: ["Compilers", "Databases", "Protocols", "All of the above"], answer: "All of the above" },
+                { q: `Who is the target audience for ${subject}?`, options: ["Engineers", "Designers", "Analysts", "Students"], answer: "Engineers" },
+                { q: `What is the standard unit of measurement in ${subject}?`, options: ["Lines of Code", "O(n)", "Bytes", "Varies"], answer: "Varies" },
+                { q: `How do you resolve a critical error in ${subject}?`, options: ["Debugging", "Rebooting", "Ignoring it", "Formatting"], answer: "Debugging" }
+            ].sort(() => 0.5 - Math.random());
+        }
+
+        activeQuizzes[matchId] = {
+            id: matchId,
+            player1: { socketId: data.challengerSocketId, username: data.challengerUsername, name: data.challengerName, score: 0 },
+            player2: { socketId: socket.id, username: data.accepterUsername, name: data.accepterName, score: 0 },
+            status: 'starting'
+        };
+
+        // Notify both players
+        io.to(data.challengerSocketId).emit('quiz_match_found', { matchId, opponent: data.accepterName, opponentUsername: data.accepterUsername, questions: sessionQuestions });
+        io.to(socket.id).emit('quiz_match_found', { matchId, opponent: data.challengerName, opponentUsername: data.challengerUsername, questions: sessionQuestions });
+    });
+
+    socket.on('quiz_update_score', (data) => {
+        // data: { matchId, username, newScore }
+        const match = activeQuizzes[data.matchId];
+        if (match) {
+            if (match.player1.username === data.username) match.player1.score = data.newScore;
+            else if (match.player2.username === data.username) match.player2.score = data.newScore;
+
+            // Broadcast scores to both
+            io.to(match.player1.socketId).to(match.player2.socketId).emit('quiz_score_sync', {
+                p1Score: match.player1.score,
+                p2Score: match.player2.score
+            });
+        }
+    });
+
+    socket.on('quiz_end_match', async (data) => {
+        const match = activeQuizzes[data.matchId];
+        if (match) {
+            const p1 = match.player1;
+            const p2 = match.player2;
+            let winnerUser = 'tie';
+            let loserUser = null;
+
+            if (p1.score > p2.score) {
+                winnerUser = p1.username;
+                loserUser = p2.username;
+            } else if (p2.score > p1.score) {
+                winnerUser = p2.username;
+                loserUser = p1.username;
+            }
+
+            // Distribute coins in backend db
+            if (winnerUser !== 'tie' && loserUser) {
+                try {
+                    const User = require('mongoose').model('User');
+                    // Give 10 to winner, remove 10 from loser
+                    await User.findOneAndUpdate({ username: winnerUser }, { $inc: { coins: 10, xp: 50 } });
+                    await User.findOneAndUpdate({ username: loserUser }, { $inc: { coins: -10, xp: 10 } });
+                } catch (e) { console.error("Coin Distribution Error:", e); }
+            }
+
+            io.to(p1.socketId).to(p2.socketId).emit('quiz_match_ended', {
+                winner: winnerUser,
+                p1Score: p1.score,
+                p2Score: p2.score,
+                coinsWon: winnerUser !== 'tie' ? 10 : 0
+            });
+            delete activeQuizzes[data.matchId];
+        }
     });
 
     socket.on('disconnect', () => {
