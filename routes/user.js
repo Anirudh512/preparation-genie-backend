@@ -477,38 +477,4 @@ router.get('/achievements', async (req, res) => {
         res.status(500).send('Server Error');
     }
 });
-// DAILY SPIN WHEEL
-router.post('/spin-wheel', async (req, res) => {
-    try {
-        const { username, rewardType, amount } = req.body;
-        const user = await User.findOne({ username });
-        if (!user) return res.status(404).json({ msg: 'User not found' });
-
-        const now = new Date();
-        // Check if user has spun in the last 24 hours
-        if (user.lastSpinDate) {
-            const diffHours = Math.abs(now - new Date(user.lastSpinDate)) / 36e5;
-            if (diffHours < 24) {
-                return res.status(400).json({ success: false, msg: 'Spin Wheel is on cooldown.' });
-            }
-        }
-
-        // Apply reward
-        if (rewardType === 'coins') {
-            user.coins += amount;
-        } else if (rewardType === 'xp') {
-            user.xp += amount;
-        } else if (rewardType === 'freeze') {
-            if (user.streakFreezes < 3) user.streakFreezes += amount;
-        }
-
-        user.lastSpinDate = now;
-        await user.save();
-        res.json({ success: true, rewardType, amount, user });
-    } catch (err) {
-        console.error("Spin Wheel Error:", err.message);
-        res.status(500).send('Server Error');
-    }
-});
-
 module.exports = router;

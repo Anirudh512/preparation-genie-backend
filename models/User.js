@@ -69,10 +69,7 @@ const UserSchema = new mongoose.Schema({
     equippedTitle: { type: String, default: "" }, // ID of the equipped title
     unlockedTitles: [{ type: String }], // IDs of unlocked titles
     claimedAchievements: [{ type: String }], // IDs of achievements claimed by user
-    coins: { type: Number, default: 0 }, // ** NEW VIRTUAL ECONOMY FIELD **
     xp: { type: Number, default: 0 }, // XP for Leveling System
-    lastSpinDate: { type: Date, default: null }, // Tracking Daily Spin Wheel
-
     // Login Streak
     lastLoginDate: { type: Date, default: null },
     loginStreak: { type: Number, default: 0 },
