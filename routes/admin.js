@@ -545,4 +545,42 @@ router.put('/requests/:id/resolve', async (req, res) => {
     }
 });
 
+// --- APP VERSION (OTA UPDATES) ---
+const AppVersion = require('../models/AppVersion');
+
+// Get the latest version details
+router.get('/app-version', async (req, res) => {
+    try {
+        const versionDoc = await AppVersion.findOne().sort({ updatedAt: -1 });
+        if (!versionDoc) return res.status(404).json({ msg: 'No version info found' });
+        res.json(versionDoc);
+    } catch (err) {
+        console.error("Fetch App Version Error:", err);
+        res.status(500).send('Server Error');
+    }
+});
+
+// Post/Update a new version
+router.post('/app-version', async (req, res) => {
+    try {
+        const { versionCode, versionName, apkUrl, releaseNotes, isMandatory } = req.body;
+        
+        if (!versionCode || !versionName || !apkUrl) {
+            return res.status(400).json({ msg: 'Missing required version fields' });
+        }
+
+        // We only really need 1 single document mapping the absolute latest
+        const newVersion = await AppVersion.findOneAndUpdate(
+            {}, 
+            { versionCode, versionName, apkUrl, releaseNotes, isMandatory, updatedAt: Date.now() },
+            { new: true, upsert: true }
+        );
+
+        res.json({ msg: 'App Version Saved', data: newVersion });
+    } catch (err) {
+        console.error("Save App Version Error:", err);
+        res.status(500).send('Server Error');
+    }
+});
+
 module.exports = router;

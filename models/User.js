@@ -70,7 +70,7 @@ const UserSchema = new mongoose.Schema({
     unlockedTitles: [{ type: String }], // IDs of unlocked titles
     claimedAchievements: [{ type: String }], // IDs of achievements claimed by user
     coins: { type: Number, default: 0 }, // ** NEW VIRTUAL ECONOMY FIELD **
-    xp: { type: Number, default: 0 }, // XP for Leveling System
+
     // Login Streak
     lastLoginDate: { type: Date, default: null },
     loginStreak: { type: Number, default: 0 },

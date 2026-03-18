@@ -46,14 +46,13 @@ router.get('/profile/:username', async (req, res) => {
 router.get('/leaderboard', async (req, res) => {
     try {
         const users = await User.find({})
-            .select('name username testsCompleted loginStreak coins progress equippedTitle xp')
+            .select('name username testsCompleted loginStreak coins progress equippedTitle')
             .lean();
 
         const rankedUsers = users.map(u => {
             const score =
                 (u.testsCompleted || 0) * 100 +
                 (u.loginStreak || 0) * 50 +
-                (u.xp || 0) * 20 +
                 (u.coins || 0) * 5 +
                 (u.progress || 0) * 10;
             return { ...u, score: Math.round(score) };
@@ -114,15 +113,13 @@ router.post('/read-unit', async (req, res) => {
 // UPDATE PROGRESS / ACHIEVEMENTS
 router.post('/update-progress', async (req, res) => {
     try {
-        const { username, progress, testsCompleted, achievements, xp } = req.body;
+        const { username, progress, testsCompleted, achievements } = req.body;
 
         const user = await User.findOne({ username });
         if (!user) return res.status(404).json({ msg: 'User not found' });
 
         if (progress !== undefined) user.progress = progress;
         if (testsCompleted !== undefined) user.testsCompleted = testsCompleted;
-        if (xp !== undefined) user.xp = (user.xp || 0) + xp; // Add newly earned XP
-
         if (achievements) {
             // Add new achievements, avoid duplicates
             achievements.forEach(ach => {
@@ -477,4 +474,5 @@ router.get('/achievements', async (req, res) => {
         res.status(500).send('Server Error');
     }
 });
+
 module.exports = router;
