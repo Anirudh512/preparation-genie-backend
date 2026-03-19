@@ -16,7 +16,8 @@ const io = new Server(server, {
     cors: {
         origin: "*", // Allow all origins for dev
         methods: ["GET", "POST"]
-    }
+    },
+    maxHttpBufferSize: 1e8 // Allow 100MB payload for images
 });
 
 const activeStudyRooms = {}; // { subjectName: { socketId: { username, joinedAt } } }
@@ -200,12 +201,9 @@ io.on('connection', (socket) => {
             const currentSize = activeChatRooms[data.roomId].users.size;
             const maxEver = activeChatRooms[data.roomId].maxEver;
 
-            // if (currentSize === 1 && maxEver >= 2) {
-            //     io.to(data.roomId).emit('chat_dismantled', { reason: 'Not enough members' });
-            // } else if (currentSize === 0) {
-            //     // Do not delete activeChatRooms[data.roomId] entirely; instead just let the history persist in memory.
-            //     // delete activeChatRooms[data.roomId];
-            // }
+            if (currentSize === 0) {
+                // Let the history persist in memory temporarily.
+            }
         }
     });
 
@@ -351,10 +349,9 @@ io.on('connection', (socket) => {
                     });
                 }
 
-                if (currentSize === 1 && maxEver >= 2) {
-                    io.to(roomId).emit('chat_dismantled', { reason: 'Partner Disconnected' });
-                } else if (currentSize === 0) {
-                    delete activeChatRooms[roomId];
+                if (currentSize === 0) {
+                    // Do not artificially issue chat_dismantled so 'temporary leaves' or lock screens 
+                    // don't kick others out. Keep room array alive for clean re-join syncing!
                 }
             }
         }

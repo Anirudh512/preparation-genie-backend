@@ -7,10 +7,16 @@ router.post('/register', async (req, res) => {
     try {
         const { username, email, pin, name, rollNo, branch, section, securityQuestion, securityAnswer } = req.body;
 
-        // Check if user exists
-        let user = await User.findOne({ username });
-        if (user) {
+        // Check if username exists
+        let userExists = await User.findOne({ username });
+        if (userExists) {
             return res.status(400).json({ msg: 'Username already exists' });
+        }
+
+        // Check if email exists
+        let emailExists = await User.findOne({ email });
+        if (emailExists) {
+            return res.status(400).json({ msg: 'Email already exists' });
         }
 
         // Create new user
@@ -44,12 +50,12 @@ router.post('/login', async (req, res) => {
         // Check user
         const user = await User.findOne({ username });
         if (!user) {
-            return res.status(400).json({ msg: 'Invalid Credentials' });
+            return res.status(404).json({ msg: 'Username not found' });
         }
 
         // Check PIN
         if (pin !== user.pin) {
-            return res.status(400).json({ msg: 'Invalid Credentials' });
+            return res.status(401).json({ msg: 'Incorrect password' });
         }
 
         // --- STREAK LOGIC ---
