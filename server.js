@@ -21,8 +21,10 @@ const io = new Server(server, {
 });
 
 const activeStudyRooms = {}; // { subjectName: { socketId: { username, joinedAt } } }
-const globalOnlineUsers = {}; // { socketId: username }
-const usernameToSocket = {}; // { username: socketId }
+const userSockets = {}; // { username: Set<socketId> }
+const socketToUser = {}; // { socketId: username }
+const activeChatRooms = {}; // roomId -> { users:Set<socketId>, usernames:Set<string>, maxEver:number, history:[] }
+const socketRooms = {}; // socketId -> Set<roomId>
 
 // Simple profanity filter
 const abusiveWords = ['fuck', 'shit', 'bitch', 'asshole', 'cunt', 'dick', 'pussy', 'whore', 'slut', 'idiot', 'stupid', 'bastard'];
@@ -105,8 +107,33 @@ io.on('connection', (socket) => {
         io.emit('doubt_message_receive', messageData);
     });
 
-    // --- PRIVATE CHAT ROOMS & STUDY REQUESTS ---
-    const activeChatRooms = {}; // roomId -> { users: Set<socketId>, maxEver: number }
+    const addSocketRoom = (sid, roomId) => {
+        if (!socketRooms[sid]) socketRooms[sid] = new Set();
+        socketRooms[sid].add(roomId);
+    };
+    const removeSocketRoom = (sid, roomId) => {
+        if (socketRooms[sid]) {
+            socketRooms[sid].delete(roomId);
+            if (socketRooms[sid].size === 0) delete socketRooms[sid];
+        }
+    };
+    const disbandRoom = (roomId, reasonMessage) => {
+        const room = activeChatRooms[roomId];
+        if (!room) return;
+        io.in(roomId).emit('chat_dismantled', {
+            roomId,
+            message: reasonMessage || 'This chat has been closed.',
+            timestamp: new Date().toISOString()
+        });
+        room.users.forEach((sid) => {
+            const s = io.sockets.sockets.get(sid);
+            if (s) {
+                s.leave(roomId);
+                removeSocketRoom(sid, roomId);
+            }
+        });
+        delete activeChatRooms[roomId];
+    };
 
     socket.on('send_study_request', (data) => {
         // data: { targetUsername, senderUsername, requestType, subject, roomId (optional) }
@@ -135,7 +162,8 @@ io.on('connection', (socket) => {
         socket.emit('study_request_accepted_self', {
             roomId: roomId,
             subject: data.subject,
-            senderSocketId: data.senderSocketId
+            senderSocketId: data.senderSocketId,
+            senderUsername: socketToUser[data.senderSocketId] || null
         });
     });
 
@@ -156,60 +184,108 @@ io.on('connection', (socket) => {
 
     // Room Management
     socket.on('join_private_room', async (data) => {
-        // data: { roomId, username }
-        socket.join(data.roomId);
-        if (!activeChatRooms[data.roomId]) {
-            activeChatRooms[data.roomId] = { users: new Set(), maxEver: 0, history: [] };
+        // data: { roomId, username, historyLimit?, includeMissed? }
+        const roomId = data.roomId;
+        const username = data.username;
+        const historyLimit = Math.max(1, Math.min(1000, Number(data.historyLimit) || 1000));
+        socket.join(roomId);
+        addSocketRoom(socket.id, roomId);
+        if (!activeChatRooms[roomId]) {
+            activeChatRooms[roomId] = { users: new Set(), usernames: new Set(), maxEver: 0, history: [] };
             
             try {
-                let dbRoom = await ChatRoom.findOne({ roomId: data.roomId });
+                let dbRoom = await ChatRoom.findOne({ roomId });
                 if (dbRoom) {
-                    activeChatRooms[data.roomId].history = dbRoom.history;
+                    activeChatRooms[roomId].history = dbRoom.history;
                 }
             } catch (err) { 
                 console.error("Error fetching ChatRoom from DB", err); 
             }
         }
-        activeChatRooms[data.roomId].users.add(socket.id);
+        activeChatRooms[roomId].users.add(socket.id);
+        if (username) activeChatRooms[roomId].usernames.add(username);
 
-        if (activeChatRooms[data.roomId].users.size > activeChatRooms[data.roomId].maxEver) {
-            activeChatRooms[data.roomId].maxEver = activeChatRooms[data.roomId].users.size;
+        if (activeChatRooms[roomId].users.size > 4) {
+            activeChatRooms[roomId].users.delete(socket.id);
+            if (username) activeChatRooms[roomId].usernames.delete(username);
+            socket.leave(roomId);
+            removeSocketRoom(socket.id, roomId);
+            socket.emit('room_join_error', {
+                roomId,
+                message: 'Room is full. Maximum 4 members allowed.'
+            });
+            return;
+        }
+
+        if (activeChatRooms[roomId].users.size > activeChatRooms[roomId].maxEver) {
+            activeChatRooms[roomId].maxEver = activeChatRooms[roomId].users.size;
         }
 
         // Emit existing chat history to the newly joined user
         socket.emit('receive_chat_history', {
-            history: activeChatRooms[data.roomId].history
+            roomId,
+            history: activeChatRooms[roomId].history.slice(-historyLimit)
         });
 
-        socket.to(data.roomId).emit('user_joined_room', {
-            username: data.username,
+        socket.to(roomId).emit('user_joined_room', {
+            roomId,
+            username: username,
             timestamp: new Date().toISOString()
+        });
+        io.in(roomId).emit('room_members_update', {
+            roomId,
+            members: Array.from(activeChatRooms[roomId].usernames),
+            count: activeChatRooms[roomId].usernames.size
         });
     });
 
     socket.on('leave_private_room', (data) => {
-        // data: { roomId, username }
-        socket.leave(data.roomId);
-        if (activeChatRooms[data.roomId]) {
-            activeChatRooms[data.roomId].users.delete(socket.id);
+        // data: { roomId, username, leaveType, requestDisbandIfPair }
+        const roomId = data.roomId;
+        const username = data.username;
+        const leaveType = data.leaveType || 'temporary';
+        socket.leave(roomId);
+        removeSocketRoom(socket.id, roomId);
+        if (activeChatRooms[roomId]) {
+            activeChatRooms[roomId].users.delete(socket.id);
+            if (username) activeChatRooms[roomId].usernames.delete(username);
 
-            socket.to(data.roomId).emit('user_left_room', {
-                username: data.username,
+            socket.to(roomId).emit('user_left_room', {
+                roomId,
+                username: username,
                 timestamp: new Date().toISOString()
             });
 
-            const currentSize = activeChatRooms[data.roomId].users.size;
-            const maxEver = activeChatRooms[data.roomId].maxEver;
+            const currentSize = activeChatRooms[roomId].users.size;
+            const shouldDisbandPair =
+                leaveType === 'permanent' &&
+                data.requestDisbandIfPair === true &&
+                activeChatRooms[roomId].maxEver <= 2;
 
-            if (currentSize === 0) {
-                // Let the history persist in memory temporarily.
+            if (shouldDisbandPair) {
+                disbandRoom(roomId, `${username} exited chat. Room disbanded.`);
+                return;
             }
+            if (currentSize === 0) {
+                // keep history in DB; remove memory room to prevent leaks
+                delete activeChatRooms[roomId];
+                return;
+            }
+            io.in(roomId).emit('room_members_update', {
+                roomId,
+                members: Array.from(activeChatRooms[roomId].usernames),
+                count: activeChatRooms[roomId].usernames.size
+            });
         }
     });
 
     // Messaging & Receipts
     socket.on('direct_message', async (data) => {
         // data: { messageId, roomId, senderUsername, text, imageUrl (optional) }
+        if (!data || !data.roomId || !activeChatRooms[data.roomId]) return;
+        if (!activeChatRooms[data.roomId].users.has(socket.id)) return;
+        if (data.text && data.text.length > 1000) return;
+
         const cleanedText = data.text ? filterMessage(data.text) : "";
 
         const messageObject = {
@@ -240,7 +316,15 @@ io.on('connection', (socket) => {
             console.error("Error saving chat message to DB", e); 
         }
 
-        io.in(data.roomId).emit('receive_direct_message', messageObject);
+        io.in(data.roomId).emit('receive_direct_message', {
+            ...messageObject,
+            roomId: data.roomId
+        });
+        socket.emit('message_ack', {
+            roomId: data.roomId,
+            messageId: messageObject.messageId,
+            timestamp: new Date().toISOString()
+        });
     });
 
     socket.on('edit_message', async (data) => {
@@ -258,6 +342,7 @@ io.on('connection', (socket) => {
 
         // Notify Clients
         io.in(data.roomId).emit('message_edited', {
+            roomId: data.roomId,
             messageId: data.messageId,
             newText: cleanedText
         });
@@ -291,6 +376,7 @@ io.on('connection', (socket) => {
 
         // Notify Clients
         io.in(data.roomId).emit('message_deleted', {
+            roomId: data.roomId,
             messageId: data.messageId
         });
 
@@ -310,15 +396,16 @@ io.on('connection', (socket) => {
     });
 
     socket.on('typing', (data) => {
-        socket.to(data.roomId).emit('user_typing', { username: data.username });
+        socket.to(data.roomId).emit('user_typing', { roomId: data.roomId, username: data.username });
     });
 
     socket.on('stop_typing', (data) => {
-        socket.to(data.roomId).emit('user_stop_typing', { username: data.username });
+        socket.to(data.roomId).emit('user_stop_typing', { roomId: data.roomId, username: data.username });
     });
 
     socket.on('mark_seen', (data) => {
         socket.to(data.roomId).emit('message_seen', {
+            roomId: data.roomId,
             username: data.username,
             timestamp: new Date().toISOString()
         });
@@ -333,27 +420,29 @@ io.on('connection', (socket) => {
         console.log(`🔌 Client disconnected: ${socket.id}`);
 
         // Handle quitting any active chat rooms without explicit leave
-        for (const roomId in activeChatRooms) {
-            if (activeChatRooms[roomId].users.has(socket.id)) {
-                activeChatRooms[roomId].users.delete(socket.id);
-
-                const currentSize = activeChatRooms[roomId].users.size;
-                const maxEver = activeChatRooms[roomId].maxEver;
-
-                // Find username if possible to broadcast name
-                const username = socketToUser[socket.id];
-                if (username) {
-                    io.to(roomId).emit('user_left_room', {
-                        username: username,
-                        timestamp: new Date().toISOString()
-                    });
-                }
-
-                if (currentSize === 0) {
-                    // Do not artificially issue chat_dismantled so 'temporary leaves' or lock screens 
-                    // don't kick others out. Keep room array alive for clean re-join syncing!
-                }
+        const rooms = socketRooms[socket.id] ? Array.from(socketRooms[socket.id]) : [];
+        for (const roomId of rooms) {
+            if (!activeChatRooms[roomId]) continue;
+            activeChatRooms[roomId].users.delete(socket.id);
+            const username = socketToUser[socket.id];
+            if (username) {
+                activeChatRooms[roomId].usernames.delete(username);
+                io.to(roomId).emit('user_left_room', {
+                    roomId,
+                    username: username,
+                    timestamp: new Date().toISOString()
+                });
             }
+            if (activeChatRooms[roomId].users.size === 0) {
+                delete activeChatRooms[roomId];
+            } else {
+                io.in(roomId).emit('room_members_update', {
+                    roomId,
+                    members: Array.from(activeChatRooms[roomId].usernames),
+                    count: activeChatRooms[roomId].usernames.size
+                });
+            }
+            removeSocketRoom(socket.id, roomId);
         }
 
         const username = socketToUser[socket.id];
