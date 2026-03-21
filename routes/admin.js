@@ -548,6 +548,27 @@ router.put('/requests/:id/resolve', async (req, res) => {
 // --- APP VERSION (OTA UPDATES) ---
 const AppVersion = require('../models/AppVersion');
 
+function normalizeApkUrl(inputUrl) {
+    if (!inputUrl || typeof inputUrl !== 'string') return inputUrl;
+    const url = inputUrl.trim();
+
+    // Handle common Google Drive share formats and convert to direct download
+    // - https://drive.google.com/file/d/<FILE_ID>/view?usp=sharing
+    // - https://drive.google.com/open?id=<FILE_ID>
+    // - https://drive.google.com/uc?id=<FILE_ID>&export=download
+    const fileMatch = url.match(/drive\.google\.com\/file\/d\/([^/]+)/i);
+    if (fileMatch && fileMatch[1]) {
+        return `https://drive.google.com/uc?export=download&id=${fileMatch[1]}`;
+    }
+
+    const openMatch = url.match(/[?&]id=([a-zA-Z0-9_-]+)/);
+    if (/drive\.google\.com/i.test(url) && openMatch && openMatch[1]) {
+        return `https://drive.google.com/uc?export=download&id=${openMatch[1]}`;
+    }
+
+    return url;
+}
+
 // Get the latest version details
 router.get('/app-version', async (req, res) => {
     try {
@@ -564,15 +585,19 @@ router.get('/app-version', async (req, res) => {
 router.post('/app-version', async (req, res) => {
     try {
         const { versionCode, versionName, apkUrl, releaseNotes, isMandatory } = req.body;
+        const normalizedApkUrl = normalizeApkUrl(apkUrl);
         
-        if (!versionCode || !versionName || !apkUrl) {
+        if (!versionCode || !versionName || !normalizedApkUrl) {
             return res.status(400).json({ msg: 'Missing required version fields' });
+        }
+        if (Number(versionCode) <= 0) {
+            return res.status(400).json({ msg: 'Version code must be greater than 0' });
         }
 
         // We only really need 1 single document mapping the absolute latest
         const newVersion = await AppVersion.findOneAndUpdate(
             {}, 
-            { versionCode, versionName, apkUrl, releaseNotes, isMandatory, updatedAt: Date.now() },
+            { versionCode, versionName, apkUrl: normalizedApkUrl, releaseNotes, isMandatory, updatedAt: Date.now() },
             { new: true, upsert: true }
         );
 
