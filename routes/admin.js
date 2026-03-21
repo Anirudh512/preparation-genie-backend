@@ -570,16 +570,19 @@ function normalizeApkUrl(inputUrl) {
 }
 
 // Get the latest version details
-router.get('/app-version', async (req, res) => {
+async function getLatestAppVersion(req, res) {
     try {
         const versionDoc = await AppVersion.findOne().sort({ updatedAt: -1 });
         if (!versionDoc) return res.status(404).json({ msg: 'No version info found' });
-        res.json(versionDoc);
+        return res.json(versionDoc);
     } catch (err) {
         console.error("Fetch App Version Error:", err);
-        res.status(500).send('Server Error');
+        return res.status(500).send('Server Error');
     }
-});
+}
+
+router.get('/app-version', getLatestAppVersion);
+router.get('/app-version/latest', getLatestAppVersion);
 
 // Post/Update a new version
 router.post('/app-version', async (req, res) => {
