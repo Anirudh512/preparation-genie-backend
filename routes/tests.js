@@ -3,6 +3,7 @@ const router = express.Router();
 const Test = require('../models/Test');
 const User = require('../models/User');
 const { syllabusSubjects, subjectUnitsMap } = require('../data/syllabus');
+const { ensureUserDefaults } = require('../lib/userDefaults');
 
 // GET ALL SUBJECTS FOR YEAR/SEM
 router.get('/subjects/:branch/:year/:sem', (req, res) => {
@@ -60,6 +61,7 @@ router.post('/submit', async (req, res) => {
 
         const user = await User.findOne({ username });
         if (!user) return res.status(404).json({ msg: 'User not found' });
+        ensureUserDefaults(user);
 
         // Add to history
         const now = new Date();

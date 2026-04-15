@@ -63,6 +63,37 @@ router.post('/users/reset-pin', async (req, res) => {
     }
 });
 
+// --- GITHUB RELEASE REVERSE PROXY ---
+// Flutter Web cannot upload directly to uploads.github.com due to strict CORS rules blocking OPTIONS preflight requests.
+router.post('/github-proxy/upload', express.raw({ type: '*/*', limit: '200mb' }), async (req, res) => {
+    try {
+        const targetUrl = req.query.target_url;
+        if (!targetUrl || !targetUrl.startsWith('https://uploads.github.com/')) {
+            return res.status(403).json({ msg: 'Invalid proxy destination' });
+        }
+        if (!req.body || !Buffer.isBuffer(req.body)) {
+            return res.status(400).json({ msg: 'No file data received' });
+        }
+
+        const response = await fetch(targetUrl, {
+            method: 'POST',
+            body: req.body,
+            headers: {
+                'Authorization': req.header('Authorization') || '',
+                'Content-Type': req.header('Content-Type') || 'application/octet-stream',
+                'Accept': 'application/vnd.github+json',
+                'X-GitHub-Api-Version': '2022-11-28',
+            }
+        });
+
+        const data = await response.json().catch(() => ({}));
+        return res.status(response.status).json(data);
+    } catch (err) {
+        console.error("GitHub Proxy Error:", err);
+        return res.status(500).json({ msg: err.message || 'Proxy Request Failed' });
+    }
+});
+
 // 6. GET STUDY CONTENT (For Editing)
 // 6. GET STUDY CONTENT (For Editing)
 router.get('/content/:subject/:unit', async (req, res) => {

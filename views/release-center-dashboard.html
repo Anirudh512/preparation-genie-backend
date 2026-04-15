@@ -1,0 +1,77 @@
+﻿<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Preparation Genie Release Center</title>
+  <link rel="stylesheet" href="/release-center-static/styles.css" />
+</head>
+<body>
+  <main class="shell dashboard-shell">
+    <section class="hero-panel wide">
+      <div>
+        <p class="eyebrow">Preparation Genie</p>
+        <h1>Release Center</h1>
+        <p>Publish app releases and in-app content patches from one browser workflow.</p>
+      </div>
+      <div class="hero-actions">
+        <button id="refresh-btn" class="secondary">Refresh</button>
+        <button id="logout-btn" class="secondary danger">Logout</button>
+      </div>
+    </section>
+
+    <section class="grid-two">
+      <div class="panel">
+        <h2>Create draft</h2>
+        <form id="draft-form" class="stack">
+          <label>
+            <span>Release line</span>
+            <input type="text" name="releaseLine" value="2.0" required />
+          </label>
+          <label>
+            <span>Release kind</span>
+            <select name="releaseKind" id="release-kind">
+              <option value="apkRelease">APK release</option>
+              <option value="contentPatch">Content patch</option>
+            </select>
+          </label>
+          <label class="checkbox-row">
+            <input type="checkbox" name="mandatory" />
+            <span>Mandatory update</span>
+          </label>
+          <label>
+            <span>Release notes</span>
+            <textarea name="releaseNotes" rows="5" placeholder="What changed in this update?"></textarea>
+          </label>
+          <label id="content-manifest-wrap" class="hidden">
+            <span>Content manifest JSON</span>
+            <textarea name="contentManifest" rows="8">{
+  "message": "Refresh app content and cache.",
+  "cacheActions": ["offlineCache", "profileCache", "leaderboardCache", "syllabusCache"],
+  "restartRoute": "/splash"
+}</textarea>
+          </label>
+          <button type="submit">Create draft</button>
+        </form>
+        <p id="draft-status" class="status-line"></p>
+      </div>
+
+      <div class="panel">
+        <h2>Current live release</h2>
+        <div id="current-live" class="release-summary empty-state">Loading live release…</div>
+      </div>
+    </section>
+
+    <section class="panel">
+      <div class="section-head">
+        <div>
+          <h2>Release history</h2>
+          <p class="muted">Drafts, live release, older posts, and rollback targets.</p>
+        </div>
+      </div>
+      <div id="releases-list" class="release-list"></div>
+    </section>
+  </main>
+  <script src="/release-center-static/app.js"></script>
+</body>
+</html>

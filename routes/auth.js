@@ -1,41 +1,93 @@
 const express = require('express');
 const router = express.Router();
 const User = require('../models/User');
+const { buildUserDefaults, ensureUserDefaults } = require('../lib/userDefaults');
 
 // REGISTER
 router.post('/register', async (req, res) => {
     try {
-        const { username, email, pin, name, rollNo, branch, section, securityQuestion, securityAnswer } = req.body;
-
-        // Check if username exists
-        let userExists = await User.findOne({ username });
-        if (userExists) {
-            return res.status(400).json({ msg: 'Username already exists' });
-        }
-
-        // Check if email exists
-        let emailExists = await User.findOne({ email });
-        if (emailExists) {
-            return res.status(400).json({ msg: 'Email already exists' });
-        }
-
-        // Create new user
-        user = new User({
+        const {
             username,
             email,
-            pin, // In production, hash this!
+            pin,
             name,
             rollNo,
             branch,
             section,
             securityQuestion,
-            securityAnswer: securityAnswer.toLowerCase(),
-            // GAMIFICATION: Award "Newbie" immediately
-            achievements: ['ach_01']
-        });
+            securityAnswer
+        } = req.body;
+
+        const normalizedUsername = String(username || '').trim();
+        const normalizedEmail = String(email || '').trim().toLowerCase();
+        const normalizedPin = String(pin || '').trim();
+        const normalizedName = String(name || '').trim();
+        const normalizedRollNo = String(rollNo || '').trim();
+        const normalizedBranch = String(branch || '').trim();
+        const normalizedSection = String(section || '').trim();
+        const normalizedSecurityQuestion = String(securityQuestion || '').trim();
+        const normalizedSecurityAnswer = String(securityAnswer || '').trim().toLowerCase();
+
+        if (
+            !normalizedUsername ||
+            !normalizedEmail ||
+            !normalizedPin ||
+            !normalizedName ||
+            !normalizedRollNo ||
+            !normalizedBranch ||
+            !normalizedSection ||
+            !normalizedSecurityQuestion ||
+            !normalizedSecurityAnswer
+        ) {
+            return res.status(400).json({ msg: 'All required fields must be provided' });
+        }
+
+        // Check if username exists
+        let userExists = await User.findOne({ username: normalizedUsername });
+        if (userExists) {
+            return res.status(400).json({ msg: 'Username already exists' });
+        }
+
+        // Check if email exists
+        let emailExists = await User.findOne({ email: normalizedEmail });
+        if (emailExists) {
+            return res.status(400).json({ msg: 'Email already exists' });
+        }
+
+        // Create new user
+        const user = new User(
+            buildUserDefaults({
+                username: normalizedUsername,
+                email: normalizedEmail,
+                pin: normalizedPin, // In production, hash this!
+                name: normalizedName,
+                rollNo: normalizedRollNo,
+                branch: normalizedBranch,
+                section: normalizedSection,
+                securityQuestion: normalizedSecurityQuestion,
+                securityAnswer: normalizedSecurityAnswer,
+                achievements: ['ach_01'],
+            }),
+        );
 
         await user.save();
-        res.status(201).json({ msg: 'User registered successfully' });
+        res.status(201).json({
+            msg: 'User registered successfully',
+            user: {
+                id: user.id,
+                username: user.username,
+                email: user.email,
+                name: user.name,
+                rollNo: user.rollNo,
+                branch: user.branch,
+                section: user.section,
+                achievements: user.achievements,
+                claimedAchievements: user.claimedAchievements,
+                unlockedTitles: user.unlockedTitles,
+                progress: user.progress,
+                coins: user.coins,
+            }
+        });
     } catch (err) {
         console.error(err.message);
         res.status(500).send('Server Error');
@@ -46,21 +98,35 @@ router.post('/register', async (req, res) => {
 router.post('/login', async (req, res) => {
     try {
         const { username, pin } = req.body;
+        const normalizedUsername = String(username || '').trim();
+        const normalizedPin = String(pin || '').trim();
 
         // Check user
-        const user = await User.findOne({ username });
+        const user = await User.findOne({ username: normalizedUsername });
         if (!user) {
-            return res.status(404).json({ msg: 'Username not found' });
+            return res.status(404).json({
+                msg: 'Username is incorrect.',
+                code: 'USERNAME_NOT_FOUND',
+            });
         }
 
+        const wasNormalized = ensureUserDefaults(user);
+
         // Check PIN
-        if (pin !== user.pin) {
-            return res.status(401).json({ msg: 'Incorrect password' });
+        if (normalizedPin !== user.pin) {
+            if (wasNormalized) {
+                await user.save();
+            }
+            return res.status(401).json({
+                msg: 'PIN is incorrect.',
+                code: 'INCORRECT_PIN',
+            });
         }
 
         // --- STREAK LOGIC ---
         const now = new Date();
         const lastLogin = user.lastLoginDate ? new Date(user.lastLoginDate) : null;
+        user.loginStreak = Number(user.loginStreak) || 0;
 
         if (lastLogin) {
             const diffTime = Math.abs(now - lastLogin);
@@ -110,8 +176,16 @@ router.post('/login', async (req, res) => {
                 id: user.id,
                 username: user.username,
                 name: user.name,
+                email: user.email,
+                rollNo: user.rollNo,
+                branch: user.branch,
+                section: user.section,
                 achievements: user.achievements,
                 claimedAchievements: user.claimedAchievements,
+                unlockedTitles: user.unlockedTitles,
+                progress: user.progress,
+                coins: user.coins,
+                equippedTitle: user.equippedTitle || user.activeTitle || '',
                 loginStreak: user.loginStreak
             }
         });

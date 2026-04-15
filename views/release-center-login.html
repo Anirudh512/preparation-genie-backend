@@ -1,0 +1,34 @@
+﻿<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Preparation Genie Release Center Login</title>
+  <link rel="stylesheet" href="/release-center-static/styles.css" />
+</head>
+<body>
+  <main class="shell auth-shell">
+    <section class="hero-panel">
+      <p class="eyebrow">Preparation Genie</p>
+      <h1>Release Center</h1>
+      <p>Sign in from Chrome to create drafts, upload APKs, publish updates, and manage rollbacks without Google Drive.</p>
+    </section>
+    <section class="panel auth-panel">
+      <h2>Admin login</h2>
+      <form id="login-form" class="stack">
+        <label>
+          <span>Username</span>
+          <input type="text" name="username" placeholder="ADMIN_1" required />
+        </label>
+        <label>
+          <span>PIN</span>
+          <input type="password" name="pin" placeholder="Enter admin PIN" required />
+        </label>
+        <button type="submit">Sign in</button>
+      </form>
+      <p id="login-status" class="status-line"></p>
+    </section>
+  </main>
+  <script src="/release-center-static/login.js"></script>
+</body>
+</html>

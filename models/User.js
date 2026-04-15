@@ -12,15 +12,16 @@ const UserSchema = new mongoose.Schema({
     securityAnswer: { type: String, required: true }, // Store lowercase for easy comparison
 
     // Profile Stats
-    achievements: [{ type: String }],
+    achievements: { type: [{ type: String }], default: [] },
     progress: { type: Number, default: 0 },
     coins: {
         type: Number,
         default: 0
     },
-    ownedTitles: [{
-        type: String
-    }],
+    ownedTitles: {
+        type: [{ type: String }],
+        default: []
+    },
     activeTitle: {
         type: String,
         default: 'Novice'
@@ -41,35 +42,49 @@ const UserSchema = new mongoose.Schema({
         type: Date
     },
     // Daily Quests Tracker (Reset daily)
-    activeQuests: [{
-        id: String,
-        title: String,
-        target: Number,
-        progress: { type: Number, default: 0 },
-        reward: Number,
-        questType: String,
-        claimed: { type: Boolean, default: false }
-    }],
+    activeQuests: {
+        type: [{
+            id: String,
+            title: String,
+            target: Number,
+            progress: { type: Number, default: 0 },
+            reward: Number,
+            questType: String,
+            claimed: { type: Boolean, default: false }
+        }],
+        default: []
+    },
     lastQuestResetDate: { type: Date },
     testsCompleted: { type: Number, default: 0 },
-    readUnits: [{ type: String }], // Track unique unit IDs read
+    readUnits: {
+        type: [{ type: String }],
+        default: []
+    }, // Track unique unit IDs read
 
     // Test History
-    testHistory: [{
-        testId: { type: mongoose.Schema.Types.ObjectId, ref: 'Test' }, // Optional ref
-        subject: String,
-        unit: String,
-        score: Number,
-        totalQuestions: Number,
-        date: { type: Date, default: Date.now }
-    }],
+    testHistory: {
+        type: [{
+            testId: { type: mongoose.Schema.Types.ObjectId, ref: 'Test' }, // Optional ref
+            subject: String,
+            unit: String,
+            score: Number,
+            totalQuestions: Number,
+            date: { type: Date, default: Date.now }
+        }],
+        default: []
+    },
 
     // Gamification
     // testsCompleted and achievements are already defined above
     equippedTitle: { type: String, default: "" }, // ID of the equipped title
-    unlockedTitles: [{ type: String }], // IDs of unlocked titles
-    claimedAchievements: [{ type: String }], // IDs of achievements claimed by user
-    coins: { type: Number, default: 0 }, // ** NEW VIRTUAL ECONOMY FIELD **
+    unlockedTitles: {
+        type: [{ type: String }],
+        default: []
+    }, // IDs of unlocked titles
+    claimedAchievements: {
+        type: [{ type: String }],
+        default: []
+    }, // IDs of achievements claimed by user
 
     // Login Streak
     lastLoginDate: { type: Date, default: null },

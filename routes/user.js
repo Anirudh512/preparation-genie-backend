@@ -1,11 +1,30 @@
 const express = require('express');
 const router = express.Router();
 const User = require('../models/User');
+const QuestItem = require('../models/QuestItem');
+const AchievementItem = require('../models/AchievementItem');
+const TitleItem = require('../models/TitleItem');
+const { ensureUserDefaults } = require('../lib/userDefaults');
+
+async function loadUserByUsername(username) {
+    const normalizedUsername = String(username || '').trim();
+    if (!normalizedUsername) return null;
+
+    const user = await User.findOne({ username: normalizedUsername });
+    if (!user) return null;
+
+    const changed = ensureUserDefaults(user);
+    if (changed) {
+        await user.save();
+    }
+
+    return user;
+}
 
 // GET PROFILE
 router.get('/profile/:username', async (req, res) => {
     try {
-        const user = await User.findOne({ username: req.params.username });
+        const user = await loadUserByUsername(req.params.username);
         if (!user) return res.status(404).json({ msg: 'User not found' });
 
         // SELF-CORRECTION: Check for missing title unlocks
@@ -50,6 +69,7 @@ router.get('/leaderboard', async (req, res) => {
             .lean();
 
         const rankedUsers = users.map(u => {
+            ensureUserDefaults(u);
             const score =
                 (u.testsCompleted || 0) * 100 +
                 (u.loginStreak || 0) * 50 +
@@ -71,11 +91,8 @@ router.get('/leaderboard', async (req, res) => {
 router.post('/read-unit', async (req, res) => {
     try {
         const { username, unitId } = req.body;
-        const user = await User.findOne({ username });
+        const user = await loadUserByUsername(username);
         if (!user) return res.status(404).json({ msg: 'User not found' });
-
-        // Initialize readUnits if missing
-        if (!user.readUnits) user.readUnits = [];
 
         // Add if unique
         if (!user.readUnits.includes(unitId)) {
@@ -115,7 +132,7 @@ router.post('/update-progress', async (req, res) => {
     try {
         const { username, progress, testsCompleted, achievements } = req.body;
 
-        const user = await User.findOne({ username });
+        const user = await loadUserByUsername(username);
         if (!user) return res.status(404).json({ msg: 'User not found' });
 
         if (progress !== undefined) user.progress = progress;
@@ -156,7 +173,7 @@ router.delete('/history/:username/:historyId', async (req, res) => {
     try {
         const { username, historyId } = req.params;
 
-        const user = await User.findOne({ username });
+        const user = await loadUserByUsername(username);
         if (!user) return res.status(404).json({ msg: 'User not found' });
 
         // Pull the item from array
@@ -180,7 +197,7 @@ router.delete('/history/:username/:historyId', async (req, res) => {
 router.post('/equip-title', async (req, res) => {
     try {
         const { username, titleId } = req.body;
-        const user = await User.findOne({ username });
+        const user = await loadUserByUsername(username);
         if (!user) return res.status(404).json({ msg: 'User not found' });
 
         user.equippedTitle = titleId;
@@ -196,7 +213,7 @@ router.post('/equip-title', async (req, res) => {
 router.post('/unlock-title', async (req, res) => {
     try {
         const { username, titleId } = req.body;
-        const user = await User.findOne({ username });
+        const user = await loadUserByUsername(username);
         if (!user) return res.status(404).json({ msg: 'User not found' });
 
         if (!user.unlockedTitles.includes(titleId)) {
@@ -214,7 +231,7 @@ router.post('/unlock-title', async (req, res) => {
 router.post('/claim-achievement', async (req, res) => {
     try {
         const { username, achievementId } = req.body;
-        const user = await User.findOne({ username });
+        const user = await loadUserByUsername(username);
         if (!user) return res.status(404).json({ msg: 'User not found' });
 
         if (!user.claimedAchievements.includes(achievementId)) {
@@ -254,7 +271,7 @@ router.post('/claim-achievement', async (req, res) => {
 router.post('/claim-all-achievements', async (req, res) => {
     try {
         const { username } = req.body;
-        const user = await User.findOne({ username });
+        const user = await loadUserByUsername(username);
         if (!user) return res.status(404).json({ msg: 'User not found' });
 
         // Find achievements that are completed (in achievements array) but NOT in claimedAchievements
@@ -297,7 +314,7 @@ router.post('/claim-all-achievements', async (req, res) => {
 router.post('/spend-coins', async (req, res) => {
     try {
         const { username, amount, itemId, itemType } = req.body;
-        const user = await User.findOne({ username });
+        const user = await loadUserByUsername(username);
         if (!user) return res.status(404).json({ msg: 'User not found' });
 
         if (user.coins < amount) {
@@ -320,12 +337,9 @@ router.post('/spend-coins', async (req, res) => {
     }
 });
 
-const QuestItem = require('../models/QuestItem');
-const AchievementItem = require('../models/AchievementItem');
-
 router.get('/daily-quests/:username', async (req, res) => {
     try {
-        const user = await User.findOne({ username: req.params.username });
+        const user = await loadUserByUsername(req.params.username);
         if (!user) return res.status(404).json({ msg: 'User not found' });
 
         const now = new Date();
@@ -380,7 +394,7 @@ router.get('/daily-quests/:username', async (req, res) => {
 router.post('/progress-quest', async (req, res) => {
     try {
         const { username, questType, amount = 1 } = req.body;
-        const user = await User.findOne({ username });
+        const user = await loadUserByUsername(username);
         if (!user) return res.status(404).json({ msg: 'User not found' });
 
         let updated = false;
@@ -410,7 +424,7 @@ router.post('/progress-quest', async (req, res) => {
 router.post('/claim-quest', async (req, res) => {
     try {
         const { username, questId } = req.body;
-        const user = await User.findOne({ username });
+        const user = await loadUserByUsername(username);
         if (!user) return res.status(404).json({ msg: 'User not found' });
 
         const quest = user.activeQuests.find(q => q.id === questId);
@@ -433,7 +447,7 @@ router.post('/claim-quest', async (req, res) => {
 router.post('/buy-freeze', async (req, res) => {
     try {
         const { username } = req.body;
-        const user = await User.findOne({ username });
+        const user = await loadUserByUsername(username);
         if (!user) return res.status(404).json({ msg: 'User not found' });
 
         const freezeCost = 200; // 200 coins for a freeze
@@ -453,7 +467,6 @@ router.post('/buy-freeze', async (req, res) => {
 });
 
 // GET AVAILABLE TITLES (SHOP)
-const TitleItem = require('../models/TitleItem');
 router.get('/titles', async (req, res) => {
     try {
         const titles = await TitleItem.find({});
