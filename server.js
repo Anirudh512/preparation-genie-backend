@@ -1,15 +1,16 @@
-﻿require('dotenv').config();
+require('dotenv').config();
 const express = require('express');
 const mongoose = require('mongoose');
 const cors = require('cors');
 const bodyParser = require('body-parser');
-const http = require('http'); // Add HTTP
+const http = require('http');
 const path = require('path');
-const { Server } = require('socket.io'); // Add Socket.io
+const { Server } = require('socket.io');
 const ChatRoom = require('./models/ChatRoom');
+const { authLimiter, apiLimiter, strictLimiter, socketMessageLimiter } = require('./middleware/rateLimiter');
 
 const app = express();
-const server = http.createServer(app); // Wrap express with HTTP server
+const server = http.createServer(app);
 const PORT = process.env.PORT || 5000;
 app.set('trust proxy', true);
 
@@ -28,6 +29,9 @@ const socketToUser = {}; // { socketId: username }
 const activeChatRooms = {}; // roomId -> { users:Set<socketId>, usernames:Set<string>, maxEver:number, history:[] }
 const socketRooms = {}; // socketId -> Set<roomId>
 
+// Initialize socket message limiter (10 messages per 10 seconds)
+const checkMessageLimit = socketMessageLimiter(10, 10 * 1000);
+
 // Simple profanity filter
 const abusiveWords = ['fuck', 'shit', 'bitch', 'asshole', 'cunt', 'dick', 'pussy', 'whore', 'slut', 'idiot', 'stupid', 'bastard'];
 const filterMessage = (text) => {
@@ -41,7 +45,7 @@ const filterMessage = (text) => {
 
 // Socket.io Connection Logic
 io.on('connection', (socket) => {
-    console.log(`ðŸ”Œ New client connected: ${socket.id}`);
+    console.log(`🔌 New client connected: ${socket.id}`);
 
     // Track user globally returning online status
     socket.on('set_online', (username) => {
@@ -55,7 +59,7 @@ io.on('connection', (socket) => {
         userSockets[username].add(socket.id);
         socket.join(username); // Join a personal room for direct routing
         
-        console.log(`ðŸŸ¢ ${username} is now online (Sockets: ${userSockets[username].size})`);
+        console.log(`🟢 ${username} is now online (Sockets: ${userSockets[username].size})`);
 
         if (userSockets[username].size === 1) {
             // Only broadcast if it's their first active connection
@@ -73,7 +77,7 @@ io.on('connection', (socket) => {
             activeStudyRooms[subject] = {};
         }
         activeStudyRooms[subject][socket.id] = { socketId: socket.id, username, joinedAt: new Date() };
-        console.log(`ðŸ“š ${username} joined Study Room: ${subject}`);
+        console.log(`📚 ${username} joined Study Room: ${subject}`);
 
         // Broadcast updated room list
         io.emit('study_room_update', { subject, users: Object.values(activeStudyRooms[subject]) });
@@ -85,21 +89,32 @@ io.on('connection', (socket) => {
         if (activeStudyRooms[subject] && activeStudyRooms[subject][socket.id]) {
             const username = activeStudyRooms[subject][socket.id].username;
             delete activeStudyRooms[subject][socket.id];
-            console.log(`ðŸ’¨ ${username} left Study Room: ${subject}`);
+            console.log(`👨 ${username} left Study Room: ${subject}`);
             io.emit('study_room_update', { subject, users: Object.values(activeStudyRooms[subject]) });
         }
     });
 
     // Listen for new test submissions to broadcast to leaderboard
     socket.on('test_completed', (data) => {
-        console.log(`ðŸ† Test completed by ${data.username}, Score: ${data.score}`);
+        console.log(`🏆 Test completed by ${data.username}, Score: ${data.score}`);
         // Broadcast to everyone else
         socket.broadcast.emit('live_leaderboard_update', data);
     });
 
-    // Live Doubt Forum Chat (with abusive word filter)
+    // Live Doubt Forum Chat (with abusive word filter & rate limiting)
     socket.on('new_doubt_message', (messageData) => {
-        console.log(`ðŸ’¬ New Doubt from ${messageData.author}`);
+        const username = messageData.author;
+
+        // Check rate limit for socket messages
+        if (checkMessageLimit(username)) {
+            socket.emit('rate_limit_exceeded', {
+                msg: 'You are sending messages too quickly. Please slow down.',
+                code: 'MESSAGE_RATE_LIMIT'
+            });
+            return;
+        }
+
+        console.log(`💬 New Doubt from ${username}`);
 
         // Filter out abusive words
         const cleanedText = filterMessage(messageData.text);
@@ -288,6 +303,15 @@ io.on('connection', (socket) => {
         if (!activeChatRooms[data.roomId].users.has(socket.id)) return;
         if (data.text && data.text.length > 1000) return;
 
+        // Check rate limit
+        if (checkMessageLimit(data.senderUsername)) {
+            socket.emit('rate_limit_exceeded', {
+                msg: 'You are sending messages too quickly',
+                code: 'MESSAGE_RATE_LIMIT'
+            });
+            return;
+        }
+
         const cleanedText = data.text ? filterMessage(data.text) : "";
 
         const messageObject = {
@@ -371,7 +395,7 @@ io.on('connection', (socket) => {
             const msgObj = activeChatRooms[data.roomId].history.find(m => m.messageId === data.messageId);
             if (msgObj) {
                 msgObj.isDeleted = true;
-                msgObj.text = "ðŸš« This message was deleted.";
+                msgObj.text = "🚫 This message was deleted.";
                 msgObj.imageUrl = null;
             }
         }
@@ -389,7 +413,7 @@ io.on('connection', (socket) => {
                 { 
                     $set: { 
                         "history.$.isDeleted": true,
-                        "history.$.text": "ðŸš« This message was deleted.",
+                        "history.$.text": "🚫 This message was deleted.",
                         "history.$.imageUrl": null
                     } 
                 }
@@ -419,7 +443,7 @@ io.on('connection', (socket) => {
     });
 
     socket.on('disconnect', () => {
-        console.log(`ðŸ”Œ Client disconnected: ${socket.id}`);
+        console.log(`🔌 Client disconnected: ${socket.id}`);
 
         // Handle quitting any active chat rooms without explicit leave
         const rooms = socketRooms[socket.id] ? Array.from(socketRooms[socket.id]) : [];
@@ -454,10 +478,10 @@ io.on('connection', (socket) => {
 
             if (userSockets[username].size === 0) {
                 delete userSockets[username];
-                console.log(`ðŸ”´ ${username} went offline`);
+                console.log(`🔴 ${username} went offline`);
                 io.emit('user_status_change', { username, isOnline: false });
             } else {
-                console.log(`âš ï¸ ${username} lost connection but remains online (Sockets: ${userSockets[username].size})`);
+                console.log(`⚠️ ${username} lost connection but remains online (Sockets: ${userSockets[username].size})`);
             }
         }
 
@@ -465,7 +489,7 @@ io.on('connection', (socket) => {
         for (const subject in activeStudyRooms) {
             if (activeStudyRooms[subject][socket.id]) {
                 delete activeStudyRooms[subject][socket.id];
-                console.log(`ðŸ‘€ Cleaned up ${username || 'Unknown'} from ${subject}`);
+                console.log(`👀 Cleaned up ${username || 'Unknown'} from ${subject}`);
                 io.emit('study_room_update', { subject, users: Object.values(activeStudyRooms[subject]) });
             }
         }
@@ -483,7 +507,6 @@ app.use((req, res, next) => {
     next();
 });
 
-// MongoDB Connection
 // MongoDB Connection
 const MONGODB_URI = process.env.MONGODB_URI || 'mongodb://localhost:27017/preparation_genie';
 
@@ -503,8 +526,8 @@ mongoose.connect(MONGODB_URI, {
     serverSelectionTimeoutMS: 15000,
     socketTimeoutMS: 45000,
 })
-    .then(() => console.log('âœ… MongoDB Connected'))
-    .catch(err => console.error('âŒ MongoDB Connection Error:', err));
+    .then(() => console.log('✅ MongoDB Connected'))
+    .catch(err => console.error('❌ MongoDB Connection Error:', err));
 
 // Routes
 const authRoutes = require('./routes/auth');
@@ -514,18 +537,23 @@ const testRoutes = require('./routes/tests');
 const adminRoutes = require('./routes/admin');
 const adminReleaseCenterRoutes = require('./routes/adminReleaseCenter');
 const publicReleaseRoutes = require('./routes/publicReleases');
-const notificationRoutes = require('./routes/notifications'); // New Notification Route
-const aiRoutes = require('./routes/ai'); // New AI Route
+const notificationRoutes = require('./routes/notifications');
+const aiRoutes = require('./routes/ai');
 
+// Apply rate limiting to routes
 app.use('/', publicReleaseRoutes);
-app.use('/api/auth', authRoutes);
-app.use('/api/user', profileDashboardRoutes);
-app.use('/api/user', userRoutes);
-app.use('/api/tests', testRoutes);
-app.use('/api/admin', adminReleaseCenterRoutes);
-app.use('/api/admin', adminRoutes);
-app.use('/api/notifications', notificationRoutes);
-app.use('/api/ai', aiRoutes);
+app.use('/api/auth', authLimiter, authRoutes); // Rate limit auth endpoints
+app.use('/api/user', apiLimiter, profileDashboardRoutes);
+app.use('/api/user', apiLimiter, userRoutes);
+app.use('/api/tests', apiLimiter, testRoutes);
+app.use('/api/admin', apiLimiter, adminReleaseCenterRoutes);
+app.use('/api/admin', apiLimiter, adminRoutes);
+app.use('/api/notifications', apiLimiter, notificationRoutes);
+app.use('/api/ai', apiLimiter, aiRoutes);
+
+// Apply strict limiter to sensitive operations
+app.post('/api/auth/forgot-pin', strictLimiter);
+app.post('/api/user/spend-coins', strictLimiter);
 
 // Basic Route
 app.get('/', (req, res) => {
@@ -557,5 +585,5 @@ app.get('/api/debug-db', async (req, res) => {
 });
 
 server.listen(PORT, () => {
-    console.log(`ðŸš€ Server and WebSockets running on http://localhost:${PORT}`);
+    console.log(`🚀 Server and WebSockets running on http://localhost:${PORT}`);
 });
