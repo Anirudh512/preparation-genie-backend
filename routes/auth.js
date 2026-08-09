@@ -1,5 +1,6 @@
 const express = require('express');
 const router = express.Router();
+const bcrypt = require('bcryptjs');
 const User = require('../models/User');
 const { buildUserDefaults, ensureUserDefaults } = require('../lib/userDefaults');
 
@@ -42,6 +43,11 @@ router.post('/register', async (req, res) => {
             return res.status(400).json({ msg: 'All required fields must be provided' });
         }
 
+        // Validate PIN length (minimum 4 characters)
+        if (normalizedPin.length < 4) {
+            return res.status(400).json({ msg: 'PIN must be at least 4 characters long' });
+        }
+
         // Check if username exists
         let userExists = await User.findOne({ username: normalizedUsername });
         if (userExists) {
@@ -54,12 +60,15 @@ router.post('/register', async (req, res) => {
             return res.status(400).json({ msg: 'Email already exists' });
         }
 
+        // Hash the PIN using bcrypt (10 salt rounds)
+        const hashedPin = await bcrypt.hash(normalizedPin, 10);
+
         // Create new user
         const user = new User(
             buildUserDefaults({
                 username: normalizedUsername,
                 email: normalizedEmail,
-                pin: normalizedPin, // In production, hash this!
+                pin: hashedPin, // Store hashed PIN
                 name: normalizedName,
                 rollNo: normalizedRollNo,
                 branch: normalizedBranch,
@@ -112,8 +121,9 @@ router.post('/login', async (req, res) => {
 
         const wasNormalized = ensureUserDefaults(user);
 
-        // Check PIN
-        if (normalizedPin !== user.pin) {
+        // Check PIN using bcrypt comparison
+        const isPinValid = await bcrypt.compare(normalizedPin, user.pin);
+        if (!isPinValid) {
             if (wasNormalized) {
                 await user.save();
             }
@@ -200,6 +210,12 @@ router.post('/forgot-pin', async (req, res) => {
     try {
         const { username, securityAnswer, newPin } = req.body;
 
+        // Validate new PIN
+        const normalizedNewPin = String(newPin || '').trim();
+        if (normalizedNewPin.length < 4) {
+            return res.status(400).json({ msg: 'PIN must be at least 4 characters long' });
+        }
+
         const user = await User.findOne({ username });
         if (!user) {
             return res.status(404).json({ msg: 'User not found' });
@@ -215,7 +231,9 @@ router.post('/forgot-pin', async (req, res) => {
             return res.status(400).json({ msg: 'Incorrect Security Answer' });
         }
 
-        user.pin = newPin;
+        // Hash the new PIN
+        const hashedPin = await bcrypt.hash(normalizedNewPin, 10);
+        user.pin = hashedPin;
         await user.save();
 
         res.json({ msg: 'PIN updated successfully' });
