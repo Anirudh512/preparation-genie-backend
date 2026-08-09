@@ -5,6 +5,7 @@ const QuestItem = require('../models/QuestItem');
 const AchievementItem = require('../models/AchievementItem');
 const TitleItem = require('../models/TitleItem');
 const { ensureUserDefaults } = require('../lib/userDefaults');
+const { checkAndUnlockTitles } = require('../lib/constants');
 
 async function loadUserByUsername(username) {
     const normalizedUsername = String(username || '').trim();
@@ -28,27 +29,12 @@ router.get('/profile/:username', async (req, res) => {
         if (!user) return res.status(404).json({ msg: 'User not found' });
 
         // SELF-CORRECTION: Check for missing title unlocks
-        const claimedCount = user.claimedAchievements.length;
-        const titlesToCheck = [
-            { id: "title_01", req: 5 },
-            { id: "title_02", req: 10 },
-            { id: "title_03", req: 15 },
-            { id: "title_04", req: 20 },
-            { id: "title_05", req: 25 },
-            { id: "title_06", req: 30 },
-            { id: "title_07", req: 35 },
-            { id: "title_08", req: 40 },
-            { id: "title_09", req: 45 },
-            { id: "title_10", req: 50 }
-        ];
-
+        checkAndUnlockTitles(user);
+        
         let changed = false;
-        titlesToCheck.forEach(t => {
-            if (claimedCount >= t.req && !user.unlockedTitles.includes(t.id)) {
-                user.unlockedTitles.push(t.id);
-                changed = true;
-            }
-        });
+        if (checkAndUnlockTitles(user)) {
+            changed = true;
+        }
 
         if (changed) {
             await user.save();
@@ -237,26 +223,8 @@ router.post('/claim-achievement', async (req, res) => {
         if (!user.claimedAchievements.includes(achievementId)) {
             user.claimedAchievements.push(achievementId);
 
-            // CHECK TITLE UNLOCKS (1 Title per 5 Claims)
-            const claimedCount = user.claimedAchievements.length;
-            const titlesToCheck = [
-                { id: "title_01", req: 5 },
-                { id: "title_02", req: 10 },
-                { id: "title_03", req: 15 },
-                { id: "title_04", req: 20 },
-                { id: "title_05", req: 25 },
-                { id: "title_06", req: 30 },
-                { id: "title_07", req: 35 },
-                { id: "title_08", req: 40 },
-                { id: "title_09", req: 45 },
-                { id: "title_10", req: 50 }
-            ];
-
-            titlesToCheck.forEach(t => {
-                if (claimedCount >= t.req && !user.unlockedTitles.includes(t.id)) {
-                    user.unlockedTitles.push(t.id);
-                }
-            });
+            // CHECK TITLE UNLOCKS using shared function
+            checkAndUnlockTitles(user);
 
             await user.save();
         }
@@ -280,26 +248,8 @@ router.post('/claim-all-achievements', async (req, res) => {
         if (newlyClaimed.length > 0) {
             user.claimedAchievements.push(...newlyClaimed);
 
-            // CHECK TITLE UNLOCKS (Bulk check)
-            const claimedCount = user.claimedAchievements.length;
-            const titlesToCheck = [
-                { id: "title_01", req: 5 },
-                { id: "title_02", req: 10 },
-                { id: "title_03", req: 15 },
-                { id: "title_04", req: 20 },
-                { id: "title_05", req: 25 },
-                { id: "title_06", req: 30 },
-                { id: "title_07", req: 35 },
-                { id: "title_08", req: 40 },
-                { id: "title_09", req: 45 },
-                { id: "title_10", req: 50 }
-            ];
-
-            titlesToCheck.forEach(t => {
-                if (claimedCount >= t.req && !user.unlockedTitles.includes(t.id)) {
-                    user.unlockedTitles.push(t.id);
-                }
-            });
+            // CHECK TITLE UNLOCKS using shared function
+            checkAndUnlockTitles(user);
 
             await user.save();
         }
